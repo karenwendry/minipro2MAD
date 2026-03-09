@@ -1,0 +1,24 @@
+{
+  "books": [
+    {
+      "id": 1,
+      "title": "Algoritma dan Pemrograman",
+      "author": "Rinaldi Munir"
+    },
+    {
+      "id": 2,
+      "title": "Struktur Data",
+      "author": "Abdul Kadir"
+    },
+    {
+      "id": 3,
+      "title": "Basis Data",
+      "author": "Connolly & Begg"
+    },
+    {
+      "id": 4,
+      "title": "Artificial Intelligence",
+      "author": "Stuart Russell"
+    }
+  ]
+}
