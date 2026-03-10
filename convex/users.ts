@@ -1,66 +1,64 @@
-import { mutation } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
-// API untuk Mendaftar (Register)
 export const register = mutation({
-  args: { 
-    nim: v.string(), 
-    password: v.string(), 
-    role: v.string(),
-    fullName: v.string()
+  args: {
+    name: v.string(),
+    email: v.string(),
+    password: v.string(),
+    role: v.union(v.literal("student"), v.literal("admin")),
   },
   handler: async (ctx, args) => {
-    // 1. Cek apakah NIM sudah pernah didaftarkan menggunakan .filter()
+    // Validasi Domain Email Mahasiswa
+    if (args.role === "student" && !args.email.endsWith("@student.unklab.ac.id")) {
+      throw new Error("Mahasiswa wajib menggunakan email @student.unklab.ac.id!");
+    }
+
+    // Cek apakah email sudah terdaftar
     const existingUser = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("nim"), args.nim))
+      .withIndex("by_email", (q) => q.eq("email", args.email))
       .first();
 
     if (existingUser) {
-      throw new Error(`Akun dengan ID ${args.nim} sudah terdaftar!`);
+      throw new Error("Email sudah terdaftar! Silakan langsung login.");
     }
 
-    // 2. Jika belum, simpan pengguna baru ke Database
-    await ctx.db.insert("users", {
-      nim: args.nim,
+    // Insert user baru
+    const userId = await ctx.db.insert("users", {
+      name: args.name,
+      email: args.email,
       password: args.password,
       role: args.role,
-      fullName: args.fullName,
     });
+
+    return userId;
   },
 });
 
-// API untuk Masuk (Login)
-export const login = mutation({
-  args: { 
-    nim: v.string(), 
-    password: v.string(), 
-    role: v.string() 
+export const login = query({
+  args: {
+    email: v.string(),
+    password: v.string(),
+    role: v.union(v.literal("student"), v.literal("admin")),
   },
   handler: async (ctx, args) => {
-    // 1. Cari pengguna berdasarkan NIM menggunakan .filter()
+    // Validasi Domain Email Mahasiswa saat login
+    if (args.role === "student" && !args.email.endsWith("@student.unklab.ac.id")) {
+      throw new Error("Gunakan email @student.unklab.ac.id untuk login mahasiswa!");
+    }
+
+    // Cari user di database
     const user = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("nim"), args.nim))
+      .withIndex("by_email", (q) => q.eq("email", args.email))
       .first();
 
-    // 2. Validasi Akun
-    if (!user) {
-      throw new Error("Akun tidak ditemukan! Silakan daftar terlebih dahulu.");
-    }
-    if (user.password !== args.password) {
-      throw new Error("Password yang kamu masukkan salah!");
-    }
-    if (user.role !== args.role) {
-      throw new Error(`Akses ditolak! Akun ini bukan terdaftar sebagai ${args.role}.`);
-    }
+    // Validasi akun dan password
+    if (!user) throw new Error("Akun tidak ditemukan! Silakan daftar terlebih dahulu.");
+    if (user.password !== args.password) throw new Error("Password yang kamu masukkan salah!");
+    if (user.role !== args.role) throw new Error(`Akun ini tidak terdaftar sebagai ${args.role}!`);
 
-    // 3. Login sukses (Jangan kembalikan password demi keamanan)
-    return {
-      _id: user._id,
-      nim: user.nim,
-      fullName: user.fullName,
-      role: user.role,
-    }; 
+    return user; // Berhasil login
   },
 });

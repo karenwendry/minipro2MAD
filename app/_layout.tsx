@@ -1,26 +1,20 @@
 import { Stack } from 'expo-router';
-import { ConvexProvider, ConvexReactClient } from "convex/react";
+import { ConvexProvider, ConvexReactClient } from 'convex/react';
 
-// Inisialisasi Convex menggunakan URL dari file .env
-const convex = new ConvexReactClient(process.env.EXPO_PUBLIC_CONVEX_URL || "");
+// Inisialisasi klien Convex menggunakan URL dari file .env.local
+// Tanda seru (!) memastikan bahwa TypeScript tahu variabel ini tidak null
+const convex = new ConvexReactClient(process.env.EXPO_PUBLIC_CONVEX_URL!);
 
-export default function Layout() {
+export default function RootLayout() {
   return (
+    // Membungkus seluruh aplikasi dengan ConvexProvider
     <ConvexProvider client={convex}>
-      <Stack>
-        <Stack.Screen
-          name="login"
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="home"
-          options={{ title: 'Home Perpustakaan' }}
-        />
-        {/* Tambahkan screen baru untuk halaman detail & review */}
-        <Stack.Screen
-          name="book/[id]"
-          options={{ title: 'Detail & Review Buku' }}
-        />
+      {/* Menggunakan Stack navigation bawaan expo-router */}
+      <Stack screenOptions={{ headerShown: false }}>
+        {/* Kamu bisa menambahkan konfigurasi spesifik per screen di sini jika perlu nantinya */}
+        <Stack.Screen name="index" />
+        <Stack.Screen name="login" />
+        <Stack.Screen name="register" />
       </Stack>
     </ConvexProvider>
   );

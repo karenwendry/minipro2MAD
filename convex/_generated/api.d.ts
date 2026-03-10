@@ -9,7 +9,6 @@
  */
 
 import type * as books from "../books.js";
-import type * as reviews from "../reviews.js";
 import type * as users from "../users.js";
 
 import type {
@@ -20,7 +19,6 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   books: typeof books;
-  reviews: typeof reviews;
   users: typeof users;
 }>;
 

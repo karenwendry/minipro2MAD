@@ -1,63 +1,164 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 
+// --- FUNGSI DASAR BUKU ---
+
+// Fungsi mengambil daftar buku
 export const getBooks = query({
-  args: { searchTerm: v.optional(v.string()) },
+  args: { searchQuery: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    if (args.searchTerm) {
+    if (args.searchQuery) {
       return await ctx.db
         .query("books")
         .withSearchIndex("search_title", (q) =>
-          q.search("title", args.searchTerm as string)
+          q.search("title", args.searchQuery as string)
         )
         .collect();
     }
-    return await ctx.db.query("books").collect();
+    return await ctx.db.query("books").order("desc").collect();
   },
 });
 
-export const getBookById = query({
-  args: { id: v.id("books") },
-  handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
-  }
-});
-
-// ==========================================
-// FITUR KHUSUS ADMIN (TAMBAH & HAPUS BUKU)
-// ==========================================
-
-// Menambah Buku Baru
-export const createBook = mutation({
+// Fungsi menambah buku
+export const addBook = mutation({
   args: {
     title: v.string(),
     author: v.string(),
-    description: v.optional(v.string()),
+    category: v.string(),
+    synopsis: v.string(),
+    coverUrl: v.optional(v.string()), // Menerima teks berupa link gambar
+    status: v.union(v.literal("available"), v.literal("borrowed")),
   },
   handler: async (ctx, args) => {
     await ctx.db.insert("books", {
       title: args.title,
       author: args.author,
-      description: args.description,
+      category: args.category,
+      synopsis: args.synopsis,
+      coverUrl: args.coverUrl,
+      status: args.status,
     });
   },
 });
 
-// Menghapus Buku (Dan otomatis menghapus ulasannya juga)
-export const deleteBook = mutation({
-  args: { id: v.id("books") },
+// Fungsi untuk mengambil detail 1 buku saja berdasarkan ID
+export const getBookById = query({
+  args: { bookId: v.id("books") },
   handler: async (ctx, args) => {
-    // 1. Cari dan hapus semua ulasan yang terkait dengan buku ini
-    const reviews = await ctx.db
+    return await ctx.db.get(args.bookId);
+  },
+});
+
+
+// --- LOGIKA ULASAN (REVIEWS) ---
+
+// Fungsi untuk mengambil semua review untuk satu buku
+export const getReviews = query({
+  args: { bookId: v.id("books") },
+  handler: async (ctx, args) => {
+    return await ctx.db
       .query("reviews")
-      .filter((q) => q.eq(q.field("bookId"), args.id))
+      .withIndex("by_book", (q) => q.eq("bookId", args.bookId))
+      .order("desc") // Review terbaru di atas
+      .collect();
+  },
+});
+
+// Fungsi untuk mahasiswa menambahkan review baru
+export const addReview = mutation({
+  args: {
+    bookId: v.id("books"),
+    reviewerName: v.string(),
+    rating: v.number(),
+    comment: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("reviews", {
+      bookId: args.bookId,
+      reviewerName: args.reviewerName,
+      rating: args.rating,
+      comment: args.comment,
+    });
+  },
+});
+
+
+// --- LOGIKA WISHLIST (SIMPAN BUKU) ---
+
+// 1. Cek apakah buku ini sudah ada di wishlist mahasiswa tersebut
+export const checkWishlist = query({
+  args: { bookId: v.id("books"), userName: v.string() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("wishlists")
+      .withIndex("by_user_book", (q) => q.eq("userName", args.userName).eq("bookId", args.bookId))
+      .first();
+    return !!existing; // Mengembalikan true jika sudah disimpan
+  },
+});
+
+// 2. Tambah / Hapus buku dari wishlist (Toggle)
+export const toggleWishlist = mutation({
+  args: { bookId: v.id("books"), userName: v.string() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("wishlists")
+      .withIndex("by_user_book", (q) => q.eq("userName", args.userName).eq("bookId", args.bookId))
+      .first();
+      
+    if (existing) {
+      await ctx.db.delete(existing._id);
+      return false; // Buku dihapus dari wishlist
+    } else {
+      await ctx.db.insert("wishlists", { bookId: args.bookId, userName: args.userName });
+      return true; // Buku ditambahkan ke wishlist
+    }
+  },
+});
+
+// 3. Ambil SEMUA buku yang ada di wishlist milik satu mahasiswa
+export const getMyWishlist = query({
+  args: { userName: v.string() },
+  handler: async (ctx, args) => {
+    const wishlists = await ctx.db
+      .query("wishlists")
+      .withIndex("by_user", (q) => q.eq("userName", args.userName))
       .collect();
       
-    for (const review of reviews) {
-      await ctx.db.delete(review._id);
+    // Mencari detail buku untuk setiap ID yang disimpan
+    const savedBooks = [];
+    for (const item of wishlists) {
+      const book = await ctx.db.get(item.bookId);
+      if (book) savedBooks.push(book);
     }
+    return savedBooks;
+  },
+});
 
-    // 2. Hapus buku utamanya
-    await ctx.db.delete(args.id);
+
+// --- LOGIKA LEADERBOARD (GAMIFIKASI) ---
+
+// Mengambil Top 3 mahasiswa yang paling banyak menulis review
+export const getTopReviewers = query({
+  args: {},
+  handler: async (ctx) => {
+    // Ambil semua data dari tabel reviews
+    const reviews = await ctx.db.query("reviews").collect();
+    
+    // Hitung jumlah ulasan per user
+    const userCounts: Record<string, number> = {};
+    for (const review of reviews) {
+      // Menggunakan reviewerName sesuai dengan schema saat menambah ulasan
+      const name = review.reviewerName || "Mahasiswa Anonim";
+      userCounts[name] = (userCounts[name] || 0) + 1;
+    }
+    
+    // Ubah ke array, urutkan dari yang terbanyak, dan ambil 3 teratas
+    const sortedLeaderboard = Object.entries(userCounts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3);
+      
+    return sortedLeaderboard;
   },
 });
